@@ -29,20 +29,24 @@ tspan = linspace(0, 20, 200);
 dt = tspan(2) - tspan(1);
 V = 273;  
 
-dxdt = @(t, x) A*x; 
+dxdt = @(t, x) A*x;
 [t_out, x_out] = ode45(dxdt, tspan, x0);
 
-yaw_rate = x_out(:,2);
-bank_angle = x_out(:,4);
+gust = @(t) 0.3 * sin(0.5*t) + 0.3 * randn;
+yaw_rate = x_out(:,2) + gust(t_out);  
+bank_angle = x_out(:,4) + gust(t_out);
+
+% yaw_rate = x_out(:,2) + 0.10 * randn(size(x_out(:,2)));
+% bank_angle = x_out(:,4) + 0.1 * randn(size(x_out(:,4)));
 psi = cumtrapz(t_out, yaw_rate);
 
-wind_X = 50 * (randn(size(t_out)));  
-wind_Y = 50 * (randn(size(t_out)));  
-wind_Z = 20 * (randn(size(t_out)));  
+% wind_X = 50 * (randn(size(t_out)));  
+% wind_Y = 50 * (randn(size(t_out)));  
+% wind_Z = 20 * (randn(size(t_out)));  
 
-X = cumtrapz(t_out, V * cos(psi)) + wind_X;  
-Y = cumtrapz(t_out, V * sin(psi)) + wind_Y;  
-Z = -cumtrapz(t_out, V * sin(bank_angle)) + wind_Z + 12192; 
+X = cumtrapz(t_out, V * cos(psi)); 
+Y = cumtrapz(t_out, V * sin(psi));  
+Z = -cumtrapz(t_out, V * sin(bank_angle)) + 12192; 
 
 xlim([min(X) max(X)]);
 ylim([min(Y) max(Y)]);
@@ -51,11 +55,15 @@ zlim([min(Z) max(Z)]);
 t = hgtransform;
 set(aircraft, 'Parent', t);
 
+trail = plot3(nan, nan, nan, 'r-', 'LineWidth', 1.5);
+
 for i = 1:length(t_out)
     T = makehgtform('translate', [X(i) Y(i) Z(i)], ...
-                    'zrotate', psi(i) + 0.1 * randn, ...
-                    'xrotate', bank_angle(i) + 0.1 * randn);
+                    'zrotate', psi(i), ...
+                    'xrotate', bank_angle(i));
     
     set(t, 'Matrix', T);
+    set(trail, 'XData', X(1:i), 'YData', Y(1:i), 'ZData', Z(1:i));
+    
     pause(0.05);
 end

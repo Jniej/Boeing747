@@ -47,10 +47,15 @@ zlim([min(Z) max(Z)]);
 t = hgtransform;
 set(aircraft, 'Parent', t);
 
+trail = plot3(nan, nan, nan, 'r-', 'LineWidth', 1.5);
+
 for i = 1:length(t_out)
     T = makehgtform('translate', [X(i) Y(i) Z(i)], ...
                     'zrotate', psi(i), 'xrotate', bank_angle(i));
     
     set(t, 'Matrix', T);
+    
+    set(trail, 'XData', X(1:i), 'YData', Y(1:i), 'ZData', Z(1:i));
+    
     pause(0.05);
 end
