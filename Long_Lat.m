@@ -11,6 +11,8 @@ set(sys, 'statename', {'beta' 'yaw rate' 'roll rate' 'phi'});
 [Yol,Tol]=initial(ss(A,B,[1 0 0 0],zeros(1,2)),[1 0 0 0]',[0:.1:30]);
 damp(A)
 [V,E]=eig(A);
+disp(V)
+
 % CONTROL ? actuator dynamics are a lag at 10
 actn=10;actd=[1 10]; % H_r(s) in notes
 H=tf({actn 0;0 1},{actd 1;1 1});
