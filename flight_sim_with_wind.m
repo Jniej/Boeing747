@@ -3,7 +3,7 @@ clear; clc; close all;
 fig = figure;
 hold on; grid on; axis equal;
 xlabel('X (m)'); ylabel('Y (m)'); zlabel('Altitude (m)');
-title('3D Aircraft Flight Animation with Crazy Wind');
+title('3D Aircraft Flight Animation with Minor Wind Disturbance');
 view(3);
 
 aircraftModel = stlread('747.stl');  
@@ -32,7 +32,9 @@ V = 273;
 dxdt = @(t, x) A*x;
 [t_out, x_out] = ode45(dxdt, tspan, x0);
 
-gust = @(t) 0.3 * sin(0.5*t) + 0.3 * randn;
+% gust = @(t) 0.3 * sin(0.5*t) + 0.3 * randn;
+gust = @(t) 0.1 * sin(0.5*t) + 0.04 * (randn);
+
 yaw_rate = x_out(:,2) + gust(t_out);  
 bank_angle = x_out(:,4) + gust(t_out);
 
