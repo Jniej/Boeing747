@@ -8,7 +8,7 @@ runwayLength = 3048;
 acceleration = 1.08;
 t_rotation_start = sqrt(2 * runwayLength / acceleration);
 V_takeoff = acceleration * t_rotation_start;
-rotation_duration = 3;
+rotation_duration = 10;
 initial_pitch = deg2rad(15);
 final_pitch = deg2rad(5);
 climb_rate = 5;
@@ -31,27 +31,37 @@ err_prev = 0;
 
 for i = 2:length(t)
     current_time = t(i);
+%     if current_time <= t_rotation_start
+%         X(i) = 0.5 * acceleration * current_time^2;
+%         Z(i) = 0;
+%         pitch_angle(i) = 0;
+%     elseif current_time <= t_liftoff
+%         X(i) = X(i-1) + V_takeoff * dt;
+%         pitch_angle(i) = ((current_time - t_rotation_start) / rotation_duration) * initial_pitch;
+%         Z(i) = (current_time - t_rotation_start) * V_takeoff * sin(pitch_angle(i));
+%     elseif current_time <= t_pitch_reduce_start
+%         X(i) = X(i-1) + V_takeoff * dt;
+%         pitch_angle(i) = initial_pitch;
+%         Z(i) = Z(i-1) + climb_rate * dt;
+%     elseif current_time <= t_pitch_reduce_end
+%         X(i) = X(i-1) + V_takeoff * dt;
+%         pitch_angle(i) = initial_pitch - ((current_time - t_pitch_reduce_start) / (t_pitch_reduce_end - t_pitch_reduce_start)) * (initial_pitch - final_pitch);
+%         Z(i) = Z(i-1) + climb_rate * dt;
+
     if current_time <= t_rotation_start
         X(i) = 0.5 * acceleration * current_time^2;
         Z(i) = 0;
         pitch_angle(i) = 0;
+
     elseif current_time <= t_liftoff
         X(i) = X(i-1) + V_takeoff * dt;
         pitch_angle(i) = ((current_time - t_rotation_start) / rotation_duration) * initial_pitch;
-        Z(i) = (current_time - t_rotation_start) * V_takeoff * sin(pitch_angle(i));
-    elseif current_time <= t_pitch_reduce_start
-        X(i) = X(i-1) + V_takeoff * dt;
-        pitch_angle(i) = initial_pitch;
-        Z(i) = Z(i-1) + climb_rate * dt;
-    elseif current_time <= t_pitch_reduce_end
-        X(i) = X(i-1) + V_takeoff * dt;
-        pitch_angle(i) = initial_pitch - ((current_time - t_pitch_reduce_start) / (t_pitch_reduce_end - t_pitch_reduce_start)) * (initial_pitch - final_pitch);
-        Z(i) = Z(i-1) + climb_rate * dt;
+        Z(i) = Z(i-1) + sin(pitch_angle(i)) * V_takeoff * dt;
     else
         X(i) = X(i-1) + V_takeoff * dt * cos(heading_angle(i-1));
         Y(i) = Y(i-1) + V_takeoff * dt * sin(heading_angle(i-1));
-        pitch_angle(i) = final_pitch;
-        Z(i) = Z(i-1) + climb_rate * dt;
+        pitch_angle(i) = initial_pitch;
+        Z(i) = Z(i-1) + sin(pitch_angle(i)) * V_takeoff * dt;
     end
     heading_error = psi_desired - heading_angle(i-1);
     int_err = int_err + heading_error * dt;
