@@ -1,61 +1,84 @@
 clear; clc; close all;
 
+% Simulation parameters
 dt = 0.02;
 T_total = 100;
 t = 0:dt:T_total;
 
+% Initial conditions
 initial_altitude = 10000;
 target_altitude = 1000;
-V_descent = 200;
-initial_pitch = deg2rad(-3);
-final_pitch = deg2rad(-1);
+V_target = 200;  % Target airspeed in m/s
+leveling_threshold = 1500;  % Altitude at which aircraft starts leveling
+zero_roll_angle = 0;  % Target roll angle for leveling
+max_throttle = 1.0; % Maximum throttle level
+min_throttle = 0.2; % Minimum throttle level
+initial_throttle = 0.7;
 
-descent_rate = 10;
-
-descent_start_time = 5;
-descent_end_time = descent_start_time + 60;
-
+% State variables
 X = zeros(size(t));
 Z = ones(size(t)) * initial_altitude;
+V = ones(size(t));
+throttle = ones(size(t)) * initial_throttle;
 pitch_angle = zeros(size(t));
+roll_angle = zeros(size(t));
 
-% PID Controller Parameters
-Kp = 0.05; % Increase for stronger response
-Ki = 0.008; % Adjust to improve error correction
-Kd = 0.005; % Reduce damping to allow oscillation
-error_sum = 0;
-previous_error = 0;
+% PID Gains for Airspeed Regulation (Throttle Control)
+Kp_speed = 0.02;  
+Ki_speed = 0.005;  
+Kd_speed = 0.002;  
+error_sum_speed = 0;
+previous_error_speed = 0;
+integral_limit_speed = 5;
 
-% Integral Windup Limits
-integral_limit = 5;
+% PID Gains for Roll Angle Hold (Leveling)
+Kp_roll = 0.1;  
+Ki_roll = 0.02;
+Kd_roll = 0.01;
+error_sum_roll = 0;
+previous_error_roll = 0;
+integral_limit_roll = 3;
 
 for i = 2:length(t)
-    current_time = t(i);
-    altitude_error = target_altitude - Z(i-1);
-    error_sum = error_sum + altitude_error * dt;
-    error_sum = max(min(error_sum, integral_limit), -integral_limit); % Clamp integral term
-    error_derivative = (altitude_error - previous_error) / dt;
-    pitch_correction = Kp * altitude_error + Ki * error_sum + Kd * error_derivative;
-    previous_error = altitude_error;
+    % Airspeed Regulation via Throttle Control
+    airspeed_error = V_target - V(i-1);
+    error_sum_speed = error_sum_speed + airspeed_error * dt;
+    error_sum_speed = max(min(error_sum_speed, integral_limit_speed), -integral_limit_speed);
+    error_derivative_speed = (airspeed_error - previous_error_speed) / dt;
     
-    % Limit pitch correction to avoid instability
-    pitch_correction = max(min(pitch_correction, deg2rad(2)), deg2rad(-2));
+    throttle(i) = throttle(i-1) + Kp_speed * airspeed_error + Ki_speed * error_sum_speed + Kd_speed * error_derivative_speed;
+    throttle(i) = max(min(throttle(i), max_throttle), min_throttle); % Throttle bounded between min and max
     
-    if current_time < descent_start_time
-        X(i) = X(i-1) + V_descent * dt;
-        Z(i) = initial_altitude;
-        pitch_angle(i) = 0;
-    elseif current_time <= descent_end_time
-        X(i) = X(i-1) + V_descent * dt;
-        pitch_angle(i) = initial_pitch + pitch_correction;
-        Z(i) = Z(i-1) - descent_rate * dt;
+    previous_error_speed = airspeed_error;
+    
+    % Velocity update based on throttle input
+    V(i) = V(i-1) + (throttle(i) - 0.5) * dt * 100;  % Simulated throttle effect on speed
+
+    % Pitch angle linked to speed for stability
+    pitch_angle(i) = deg2rad(-3) + (V_target - V(i)) * 0.01; % Adjust pitch dynamically
+
+    % Descent update
+    Vz = V(i) * sin(pitch_angle(i));
+    X(i) = X(i-1) + V(i) * dt;
+    Z(i) = Z(i-1) + Vz * dt;
+
+    % Roll Angle Hold for Leveling
+    if Z(i) < leveling_threshold
+        roll_error = zero_roll_angle - roll_angle(i-1);
+        error_sum_roll = error_sum_roll + roll_error * dt;
+        error_sum_roll = max(min(error_sum_roll, integral_limit_roll), -integral_limit_roll);
+        error_derivative_roll = (roll_error - previous_error_roll) / dt;
+        
+        roll_correction = Kp_roll * roll_error + Ki_roll * error_sum_roll + Kd_roll * error_derivative_roll;
+        roll_angle(i) = roll_correction; % Targeting zero roll for leveling
+        
+        previous_error_roll = roll_error;
     else
-        X(i) = X(i-1) + V_descent * dt;
-        pitch_angle(i) = final_pitch;
-        Z(i) = max(Z(i-1) - descent_rate * dt, target_altitude);
+        roll_angle(i) = roll_angle(i-1); % Maintain current roll
     end
 end
 
+%% 3D Aircraft Simulation
 figure;
 hold on; grid on; axis equal;
 xlabel('X (m)'); ylabel('Y (m)'); zlabel('Altitude (m)');
@@ -65,21 +88,25 @@ xlim([0 max(X)*1.05]);
 ylim([-200, 200]);
 zlim([0, initial_altitude * 1.2]);
 
-aircraftModel = stlread('747.stl');
+% Load 3D Aircraft Model
+aircraftModel = stlread('747.stl');  % Ensure this STL file is in the directory
 scaleFactor = 3;
 vertices = aircraftModel.Points * scaleFactor;
 Rx = makehgtform('zrotate', -pi/2);
 rotatedPoints = (Rx(1:3,1:3) * vertices')';
 aircraft = patch('Faces', aircraftModel.ConnectivityList, 'Vertices', rotatedPoints, 'FaceColor', 'blue', 'EdgeColor', 'none');
 
+% 3D Transformation Setup
 hgt = hgtransform;
 set(aircraft, 'Parent', hgt);
 trail = plot3(nan, nan, nan, 'r-', 'LineWidth', 1.5);
 
+% Offset so rotation occurs at the correct pivot
 pivot_offset = [-20, 0, -10];
 T_offset = makehgtform('translate', pivot_offset);
 T_offset_inv = makehgtform('translate', -pivot_offset);
 
+% Animation Loop
 for i = 1:length(t)
     T_translate = makehgtform('translate', [X(i) 0 Z(i)]);
     T_rotate = makehgtform('yrotate', -pitch_angle(i));
@@ -88,24 +115,4 @@ for i = 1:length(t)
     set(trail, 'XData', X(1:i), 'YData', zeros(1,i), 'ZData', Z(1:i));
     pause(0.005);
 end
-
-figure;
-subplot(3,1,1);
-plot(t(2:end), Kp * (target_altitude - Z(1:end-1)), 'r', 'LineWidth', 1.5);
-xlabel('Time (s)'); ylabel('P Term');
-title('Proportional Term Response');
-grid on;
-
-subplot(3,1,2);
-plot(t(2:end), Ki * cumsum((target_altitude - Z(1:end-1)) * dt), 'g', 'LineWidth', 1.5);
-xlabel('Time (s)'); ylabel('I Term');
-title('Integral Term Response');
-grid on;
-
-subplot(3,1,3);
-plot(t(2:end), Kd * diff([0, (target_altitude - Z(1:end-1))]) / dt, 'b', 'LineWidth', 1.5);
-xlabel('Time (s)'); ylabel('D Term');
-title('Derivative Term Response');
-grid on;
-
 
