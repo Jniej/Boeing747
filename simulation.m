@@ -17,7 +17,7 @@ D = [0 0;
      0 0];
 
 sys = ss(A,B,C,D);
-tspan = [0 20]; 
+tspan = [0 50]; 
 x0 = [0.1; 0; 0; 0]; 
 u = [0; 0];  
 dxdt = @(t, x) A*x + B*u; 
@@ -49,10 +49,10 @@ grid on;
 legend('Bank Angle (\phi)');
 
 subplot(4,1,4);
-plot(t_out, x_out(:,4), 'm', 'LineWidth', 1.5);  
-xlabel('Time (s)'); ylabel({'Pitch Rate'; '(q) [rad/s]'},'FontSize',10);
+plot(t_out, x_out(:,3), 'm', 'LineWidth', 1.5);  
+xlabel('Time (s)'); ylabel({'Roll Rate'; '(p) [rad/s]'},'FontSize',10);
 grid on;
-legend('Pitch Rate (q)');
+legend('Roll Rate (q)');
 
 sgtitle('Boeing 747 Open-Loop Response');
 
