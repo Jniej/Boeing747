@@ -39,7 +39,7 @@ error_sum_roll = 0;
 previous_error_roll = 0;
 integral_limit_roll = 3;
 
-Kp_pitch = 0.05;
+Kp_pitch = 1;
 Ki_pitch = 0.02;
 Kd_pitch = 0.4;
 error_sum_pitch = 0;

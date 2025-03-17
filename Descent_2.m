@@ -41,13 +41,13 @@ pitch_error_log = zeros(size(t));
 for i = 2:length(t)
     current_time = t(i);
     start_descent = 15;
-    if current_time < 5
-        desired_descent_rate = 0;
-    elseif current_time < start_descent
-        desired_descent_rate = 100;
-    else
-        desired_descent_rate = (target_altitude - initial_altitude) / (T_total - start_descent);
-        psi_desired_final = deg2rad(28);
+     if current_time < 5
+         desired_descent_rate = 0;
+     elseif current_time < start_descent
+         desired_descent_rate = 100;
+     else
+         desired_descent_rate = (target_altitude - Z(i)) / (T_total - start_descent);
+         psi_desired_final = deg2rad(28);
     end
         
     % Update position based on heading and velocity
@@ -129,8 +129,8 @@ grid on;
 figure; hold on; grid on; axis equal;
 xlabel('X (m)'); ylabel('Y (m)'); zlabel('Altitude (m)');
 title('3D Aircraft Descent Simulation');
-% view(3);
-view([0 -1 0]);
+view(3);
+% view([0 -1 0]);
 
 zlim([0, initial_altitude * 1.2]);
 xlim([min(X) - 500, max(X) + 500]);
