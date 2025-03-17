@@ -2,11 +2,12 @@ clear; clc; close all;
 
 %% Simulation parameters
 dt = 0.02;
-T_total = 1500;
+T_total = 2500;
 t = 0:dt:T_total;
 
 stage_level = 1;
 stage_cruise = 0;
+stage_descent = 0;
 
 %% Aircraft and takeoff parameters
 runwayLength = 3048;
@@ -24,8 +25,17 @@ final_velocity = 274.4;
 V_cruise = V_ascend;
 cruise_accel = 5;
 target_altitude = 10000;
+descent_altitude = 1000;
+V_descend_final = 81.22;
 
-%% HEADING PID (Used before cruise)
+%% Graphing parameters
+rot_s = 0;
+asc_s = 0;
+lev_s = 0;
+cru_s = 0;
+des_s = 0;
+
+%% HEADING PID (Used for ascent and descent)
 psi_desired_initial = deg2rad(0);
 psi_desired_final = deg2rad(28);
 ramp_duration = 50;
@@ -33,6 +43,9 @@ Kp = 15; Ki = 0.35; Kd = 20;
 int_err = 0; err_prev = 0;
 max_bank_angle = deg2rad(25);
 turn_rate_constant = 9.81 / V_takeoff;
+
+psi_descent_initial = deg2rad(28);
+psi_descent_final = deg2rad(0);
 
 %% PITCH PID (Used throughout)
 Kp_pitch = 5; Ki_pitch = 0.1; Kd_pitch = 0.5;
@@ -101,12 +114,15 @@ for i = 2:length(t)
         X(i) = 0.5 * acceleration * current_time^2;
         Z(i) = 0;
         pitch_angle(i) = 0;
+        rot_s = i;
     
     %%% Rotation phase %%%
     elseif current_time <= t_rotation_start + rotation_duration
+        
         X(i) = X(i-1) + V_takeoff * dt;
         pitch_angle(i) = ((current_time - t_rotation_start) / rotation_duration) * initial_pitch;
         Z(i) = Z(i-1) + sin(pitch_angle(i)) * V_takeoff * dt;
+        asc_s = i;
     
     %%% Climb phase %%%
     elseif current_time <= 525
@@ -114,6 +130,7 @@ for i = 2:length(t)
         if V_ascend < ascend_velocity
             V_ascend = V_ascend + acceleration * dt;
         end
+        lev_s = i;
         
         X(i) = X(i-1) + V_ascend * dt * cos(heading_angle(i-1));
         Y(i) = Y(i-1) + V_ascend * dt * sin(heading_angle(i-1));
@@ -178,6 +195,8 @@ for i = 2:length(t)
         if V_cruise < final_velocity
             V_cruise = V_cruise + cruise_accel * dt;
         end
+        
+        cru_s = i;
                  
         X(i) = X(i-1) + V_cruise * dt * cos(heading_angle(i-1));
         Y(i) = Y(i-1) + V_cruise * dt * sin(heading_angle(i-1));
@@ -246,6 +265,7 @@ for i = 2:length(t)
         
     %%% Cruise phase with LQR heading control %%%
     elseif stage_cruise
+        des_s = i;
         %%% PID Pitch Control %%%
         desired_pitch = 0; % Maintain level flight
         altitude_error = target_altitude - Z(i-1);
@@ -288,11 +308,76 @@ for i = 2:length(t)
         X(i) = X(i-1) + V_cruise * dt * cos(heading_angle(i-1));
         Y(i) = Y(i-1) + V_cruise * dt * sin(heading_angle(i-1));
         
+        if X(i) > 150000
+            descent_stage = 1;
+            stage_cruise = 0;
+        end
+        
         % Log pitch data
         pitch_error_log(i) = pitch_error;
         P_pitch_log(i) = P_pitch;
         I_pitch_log(i) = I_pitch;
         D_pitch_log(i) = D_pitch;
+    elseif descent_stage
+        if V_cruise > V_descend_final
+            V_cruise = V_cruise - acceleration * dt;
+        end
+        descent_time = 300;
+        desired_descent_rate = (descent_altitude - Z(i - 1)) / (descent_time);
+        
+        X(i) = X(i-1) + V_cruise * dt * cos(heading_angle(i-1));
+        Y(i) = Y(i-1) + V_cruise * dt * sin(heading_angle(i-1));
+        
+        desired_pitch = max(deg2rad(-5), asin(desired_descent_rate / V_cruise));
+        pitch_error = desired_pitch - pitch_angle(i-1);
+
+        int_err_pitch = int_err_pitch + pitch_error * dt;
+        derr_pitch = (pitch_error - err_prev_pitch) / dt;
+        err_prev_pitch = pitch_error;
+
+        P_pitch = Kp_pitch * pitch_error;
+        I_pitch = Ki_pitch * int_err_pitch;
+        D_pitch = Kd_pitch * derr_pitch;
+
+        pitch_command = P_pitch + I_pitch + D_pitch;
+
+        % Limit pitch rate change for realism
+        pitch_angle(i) = pitch_angle(i-1) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
+
+        % Update altitude based on pitch
+        Z(i) = Z(i-1) + V_cruise * dt * sin(pitch_angle(i));
+        
+        %HEADING CONTROL
+        heading_error = psi_descent_final - heading_angle(i-1);
+        int_err = int_err + heading_error * dt;
+        derr = (heading_error - err_prev) / dt;
+        err_prev = heading_error;
+        
+        P_term = Kp * heading_error;
+        I_term = Ki * int_err;
+        D_term = Kd * derr;
+
+        bank_command = Kp * heading_error + Ki * int_err + Kd * derr;
+        bank_command = min(max(bank_command, -max_bank_angle), max_bank_angle);
+
+        % Smooth bank angle using a first-order lag
+        bank_angle(i) = bank_angle(i-1) + (bank_command - bank_angle(i-1)) * (dt / tau_bank);
+
+        % Update heading based on bank angle
+        turn_rate = turn_rate_constant * tan(bank_angle(i));
+        heading_angle(i) = heading_angle(i-1) + turn_rate * dt;
+
+        % Log data
+        heading_error_log(i) = heading_error;
+        P_term_log(i) = P_term;
+        I_term_log(i) = I_term;
+        D_term_log(i) = D_term;
+
+        pitch_error_log(i) = pitch_error;
+        P_pitch_log(i) = P_pitch;
+        I_pitch_log(i) = I_pitch;
+        D_pitch_log(i) = D_pitch;
+
     end
 end
 
@@ -314,6 +399,9 @@ ylabel('PID Terms');
 title('PID Pitch Contributions');
 legend('P', 'I', 'D');
 grid on;
+
+figure;
+plot(t, pitch_angle);
 
 
 figure;
@@ -373,14 +461,19 @@ title('3D Aircraft Flight Path');
 plot3(X, Y, Z, 'b-', 'LineWidth', 1.5);
 
 scatter3(X(1), Y(1), Z(1), 50, 'go', 'filled'); % Start point
+scatter3(X(rot_s), Y(rot_s), Z(rot_s), 50, 'bo', 'filled'); %rotation start
+scatter3(X(asc_s), Y(asc_s), Z(asc_s), 50, 'co', 'filled'); %ascent start
+scatter3(X(lev_s), Y(lev_s), Z(lev_s), 50, 'mo', 'filled'); %leveling start
+scatter3(X(cru_s), Y(cru_s), Z(cru_s), 50, 'yo', 'filled'); %cruise start
+scatter3(X(des_s), Y(des_s), Z(des_s), 50, 'ko', 'filled'); %descent start
 scatter3(X(end), Y(end), Z(end), 50, 'ro', 'filled'); % End point
 
 % Set axis limits for better visualization
 xlim([min(X) - 500, max(X) + 500]);
 ylim([min(Y) - 500, max(Y) + 500]);
-zlim([0, max(Z) + 500]);
+zlim([0, 30000]);
 
-legend('Flight Path', 'Start', 'End');
+legend('Flight Path', 'Start', 'Takeoff Roll', 'Ascent', 'Leveling', 'Cruise', 'Descent', 'End');
 view(3); % 3D view
 
 

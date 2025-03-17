@@ -51,7 +51,7 @@ for i = 2:length(t)
      elseif current_time < start_descent
          desired_descent_rate = 100;
      else
-         desired_descent_rate = (target_altitude - Z(i)) / (T_total - start_descent);
+         desired_descent_rate = (target_altitude - Z(i-1)) / (T_total - start_descent);
          psi_desired_final = deg2rad(28);
     end
         
