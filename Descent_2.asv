@@ -8,9 +8,12 @@ t = 0:dt:T_total;
 % Aircraft and descent parameters
 initial_altitude = 10000;
 target_altitude = 1000;
-V_aircraft = 250;    % Constant airspeed in m/s
+V_init = 274.4;    % Constant airspeed in m/s
+V_final = 81.22;
+V_aircraft = V_init;
 psi_desired = 0; % Fixed heading of 0 degrees (North)
 psi_desired_final = 0;
+ramp_duration = 50;
 
 % Target descent rate based on velocity and pitch
 desired_descent_rate = (target_altitude - initial_altitude) / T_total; % m/s (negative for descent)
@@ -38,15 +41,17 @@ pitch_error_log = zeros(size(t));
 
 % Flight path loop
 for i = 2:length(t)
+    if
+    turn_rate_constant = 9.81 / V_aircraft;
     current_time = t(i);
     start_descent = 15;
-    if current_time < 5
-        desired_descent_rate = 0;
-    elseif current_time < start_descent
-        desired_descent_rate = 100;
-    else
-        desired_descent_rate = (target_altitude - initial_altitude) / (T_total - start_descent);
-        psi_desired_final = deg2rad(28);
+     if current_time < 5
+         desired_descent_rate = 0;
+     elseif current_time < start_descent
+         desired_descent_rate = 100;
+     else
+         desired_descent_rate = (target_altitude - Z(i)) / (T_total - start_descent);
+         psi_desired_final = deg2rad(28);
     end
         
     % Update position based on heading and velocity
@@ -79,11 +84,11 @@ for i = 2:length(t)
     end
     
     %% === HEADING CONTROL ===
-    if current_time <= ramp_duration
-            psi_desired = psi_desired_initial + (psi_desired_final - psi_desired_initial) * (current_time / ramp_duration);
-        else
-            psi_desired = psi_desired_final;  % Once the ramp is complete, set the final desired heading
-        end
+    if (start_descent < current_time) && (current_time <= ramp_duration + start_descent)
+        psi_desired = psi_desired + (psi_desired_final - psi_desired) * (current_time / ramp_duration);
+    else
+        psi_desired = psi_desired_final;  % Once the ramp is complete, set the final desired heading
+    end
     heading_error = psi_desired - heading_angle(i-1);
     
     int_err_heading = int_err_heading + heading_error * dt;
@@ -129,6 +134,7 @@ figure; hold on; grid on; axis equal;
 xlabel('X (m)'); ylabel('Y (m)'); zlabel('Altitude (m)');
 title('3D Aircraft Descent Simulation');
 view(3);
+% view([0 -1 0]);
 
 zlim([0, initial_altitude * 1.2]);
 xlim([min(X) - 500, max(X) + 500]);
@@ -136,7 +142,7 @@ ylim([min(Y) - 500, max(Y) + 500]);
 
 % Load 3D model
 aircraftModel = stlread('747.stl');
-scaleFactor = 1;
+scaleFactor = 10;
 vertices = aircraftModel.Points * scaleFactor;
 Rx = makehgtform('zrotate', -pi/2);
 rotatedPoints = (Rx(1:3,1:3) * vertices')';

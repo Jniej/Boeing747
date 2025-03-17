@@ -24,6 +24,9 @@ int_err = 0; err_prev = 0;
 max_bank_angle = deg2rad(25);
 turn_rate_constant = 9.81 / V_takeoff;
 
+final_velocity = 122; %commecial airplanes typically ascend at 250-300mph
+V_ascend = V_takeoff;
+
 % State variables
 X = zeros(size(t));
 Y = zeros(size(t));
@@ -56,10 +59,15 @@ for i = 2:length(t)
     
     % Climb
     else
-        X(i) = X(i-1) + V_takeoff * dt * cos(heading_angle(i-1));
-        Y(i) = Y(i-1) + V_takeoff * dt * sin(heading_angle(i-1));
+        
+        if V_ascend < final_velocity
+            V_ascend = V_ascend + acceleration * dt;
+        end
+        
+        X(i) = X(i-1) + V_ascend * dt * cos(heading_angle(i-1));
+        Y(i) = Y(i-1) + V_ascend * dt * sin(heading_angle(i-1));
         pitch_angle(i) = initial_pitch;
-        Z(i) = Z(i-1) + sin(pitch_angle(i)) * V_takeoff * dt;
+        Z(i) = Z(i-1) + sin(pitch_angle(i)) * V_ascend * dt;
 
         % Gradual ramp of psi_desired over time
         if current_time <= ramp_duration

@@ -8,7 +8,9 @@ t = 0:dt:T_total;
 % Aircraft and descent parameters
 initial_altitude = 10000;
 target_altitude = 1000;
-V_aircraft = 250;    % Constant airspeed in m/s
+V_init = 274.4;    % Constant airspeed in m/s
+V_final = 81.22;
+V_aircraft = V_init;
 psi_desired = 0; % Fixed heading of 0 degrees (North)
 psi_desired_final = 0;
 ramp_duration = 50;
@@ -23,8 +25,9 @@ max_bank_angle = deg2rad(25);
 turn_rate_constant = 9.81 / V_aircraft;
 
 % Pitch PID parameters
-Kp_pitch = 0.8; Ki_pitch = 0.02; Kd_pitch = 0.5;
+Kp_pitch = 2; Ki_pitch = 0.2; Kd_pitch = 0.5;
 int_err_pitch = 0; err_prev_pitch = 0;
+pitch_tau = 5;  % Time constant for pitch rate limit
 
 % State variables
 X = zeros(size(t));
@@ -39,6 +42,8 @@ pitch_error_log = zeros(size(t));
 
 % Flight path loop
 for i = 2:length(t)
+    V_aircraft = V_aircraft - dt*((V_init - V_final)/T_total);
+    turn_rate_constant = 9.81 / V_aircraft;
     current_time = t(i);
     start_descent = 15;
      if current_time < 5
@@ -55,7 +60,6 @@ for i = 2:length(t)
     Y(i) = Y(i-1) + V_aircraft * dt * sin(heading_angle(i-1));
 
     %% === PITCH CONTROL ===
-    % Compute target pitch based on descent rate
     desired_pitch = asin(desired_descent_rate / V_aircraft);
     pitch_error = desired_pitch - pitch_angle(i-1);
     
@@ -68,22 +72,23 @@ for i = 2:length(t)
     D_pitch = Kd_pitch * derr_pitch;
 
     pitch_command = P_pitch + I_pitch + D_pitch;
-    pitch_angle(i) = pitch_angle(i-1) + pitch_command * dt;
+
+    % Limit pitch rate change for realism
+    pitch_angle(i) = pitch_angle(i-1) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
 
     % Update altitude based on pitch
     Z(i) = Z(i-1) + V_aircraft * dt * sin(pitch_angle(i));
     
-    % Stop descent at target altitude
     if Z(i) <= target_altitude
         Z(i) = target_altitude;
-        desired_descent_rate = 0;  % Level off at target altitude
+        desired_descent_rate = 0;
     end
     
     %% === HEADING CONTROL ===
     if (start_descent < current_time) && (current_time <= ramp_duration + start_descent)
         psi_desired = psi_desired + (psi_desired_final - psi_desired) * (current_time / ramp_duration);
     else
-        psi_desired = psi_desired_final;  % Once the ramp is complete, set the final desired heading
+        psi_desired = psi_desired_final;
     end
     heading_error = psi_desired - heading_angle(i-1);
     
@@ -98,18 +103,16 @@ for i = 2:length(t)
     bank_command = P_heading + I_heading + D_heading;
     bank_command = min(max(bank_command, -max_bank_angle), max_bank_angle);
     
-    % Smooth bank angle using a first-order lag
     tau_bank = 5;
     bank_angle(i) = bank_angle(i-1) + (bank_command - bank_angle(i-1)) * (dt / tau_bank);
     
-    % Update heading based on bank angle
     turn_rate = turn_rate_constant * tan(bank_angle(i));
     heading_angle(i) = heading_angle(i-1) + turn_rate * dt;
 
-    % Log data
     heading_error_log(i) = heading_error;
     pitch_error_log(i) = pitch_error;
 end
+
 
 %% === PLOTS ===
 figure;
@@ -138,7 +141,7 @@ ylim([min(Y) - 500, max(Y) + 500]);
 
 % Load 3D model
 aircraftModel = stlread('747.stl');
-scaleFactor = 1;
+scaleFactor = 10;
 vertices = aircraftModel.Points * scaleFactor;
 Rx = makehgtform('zrotate', -pi/2);
 rotatedPoints = (Rx(1:3,1:3) * vertices')';

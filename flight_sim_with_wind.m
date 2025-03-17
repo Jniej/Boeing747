@@ -32,7 +32,7 @@ V = 273;
 dxdt = @(t, x) A*x;
 [t_out, x_out] = ode45(dxdt, tspan, x0);
 
-% gust = @(t) 0.3 * sin(0.5*t) + 0.3 * randn;
+%gust = @(t) 0.3 * sin(0.5*t) + 0.3 * randn;
 gust = @(t) 0.1 * sin(0.5*t) + 0.04 * (randn);
 
 yaw_rate = x_out(:,2) + gust(t_out);  
