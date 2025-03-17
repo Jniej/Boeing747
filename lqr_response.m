@@ -85,8 +85,23 @@ hgt = hgtransform;
 patch('Faces', aircraftModel.ConnectivityList, 'Vertices', vertices, ...
       'FaceColor', 'blue', 'EdgeColor', 'none', 'Parent', hgt);
 
-% Initialize Path
+
+aircraftModel = stlread('747.stl');
+scaleFactor = 5;
+vertices = aircraftModel.Points * scaleFactor;
+Rx = makehgtform('zrotate', -pi/2);
+rotatedPoints = (Rx(1:3,1:3) * vertices')';
+aircraft = patch('Faces', aircraftModel.ConnectivityList, 'Vertices', rotatedPoints, 'FaceColor', 'blue', 'EdgeColor', 'none');
+
+% Setup animation transformation
+hgt = hgtransform; set(aircraft, 'Parent', hgt);
 trail = plot3(nan, nan, nan, 'r-', 'LineWidth', 1.5);
+pivot_offset = [-20, 0, -10];
+T_offset = makehgtform('translate', pivot_offset);
+T_offset_inv = makehgtform('translate', -pivot_offset);
+
+
+
 
 % Animation Loop
 for i = 2:length(T)
