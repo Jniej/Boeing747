@@ -46,14 +46,16 @@ for i = 2:length(t)
     turn_rate_constant = 9.81 / V_aircraft;
     current_time = t(i);
     start_descent = 15;
-     if current_time < 5
-         desired_descent_rate = 0;
-     elseif current_time < start_descent
-         desired_descent_rate = 100;
-     else
-         desired_descent_rate = (target_altitude - Z(i-1)) / (T_total - start_descent);
-         psi_desired_final = deg2rad(28);
-    end
+%      if current_time < 5
+%          desired_descent_rate = 0;
+%      elseif current_time < start_descent
+%          desired_descent_rate = 100;
+%      else
+%          desired_descent_rate = (target_altitude - Z(i-1)) / (T_total - start_descent);
+%          psi_desired_final = deg2rad(28);
+%      end
+    desired_descent_rate = (target_altitude - Z(i-1)) / (T_total - start_descent);
+    psi_desired_final = deg2rad(28);
         
     % Update position based on heading and velocity
     X(i) = X(i-1) + V_aircraft * dt * cos(heading_angle(i-1));

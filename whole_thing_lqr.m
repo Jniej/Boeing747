@@ -441,7 +441,7 @@ ylim([min(Y) - 500, max(Y) + 500]);
 
 % Load 3D model
 aircraftModel = stlread('747.stl');
-scaleFactor = 5;
+scaleFactor = 100;
 vertices = aircraftModel.Points * scaleFactor;
 Rx = makehgtform('zrotate', -pi/2);
 rotatedPoints = (Rx(1:3,1:3) * vertices')';
@@ -469,27 +469,27 @@ scatter3(X(des_s), Y(des_s), Z(des_s), 50, 'ko', 'filled'); %descent start
 scatter3(X(end), Y(end), Z(end), 50, 'ro', 'filled'); % End point
 
 % Set axis limits for better visualization
-xlim([min(X) - 500, max(X) + 500]);
-ylim([min(Y) - 500, max(Y) + 500]);
+xlim([min(X) - 50000, max(X) + 50000]);
+ylim([min(Y) - 50000, max(Y) + 50000]);
 zlim([0, 30000]);
 
 legend('Flight Path', 'Start', 'Takeoff Roll', 'Ascent', 'Leveling', 'Cruise', 'Descent', 'End');
 view(3); % 3D view
 
 
-% % Animation loop
-% for i = 1:length(t)
-%     T_translate = makehgtform('translate', [X(i), Y(i), Z(i) + ground_clearance]);
-%     T_yaw = makehgtform('zrotate', heading_angle(i));
-%     T_pitch = makehgtform('yrotate', -pitch_angle(i));
-%     T_roll = makehgtform('xrotate', -bank_angle(i));
-% 
-%     % Correct transformation order: translate → yaw → pitch → roll
-%     T = T_translate * T_yaw * T_pitch * T_roll;
-%     
-%     set(hgt, 'Matrix', T);
-%     set(trail, 'XData', X(1:i), 'YData', Y(1:i), 'ZData', Z(1:i) + ground_clearance);
-%     pause(0.005);
-% end
+% Animation loop
+for i = 1:length(t)
+     T_translate = makehgtform('translate', [X(i), Y(i), Z(i) + ground_clearance]);
+     T_yaw = makehgtform('zrotate', heading_angle(i));
+     T_pitch = makehgtform('yrotate', -pitch_angle(i));
+     T_roll = makehgtform('xrotate', -bank_angle(i));
+ 
+     % Correct transformation order: translate → yaw → pitch → roll
+     T = T_translate * T_yaw * T_pitch * T_roll;
+     
+     set(hgt, 'Matrix', T);
+     set(trail, 'XData', X(1:i), 'YData', Y(1:i), 'ZData', Z(1:i) + ground_clearance);
+     pause(0.00000005);
+ end
 
 
