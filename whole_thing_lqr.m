@@ -1,7 +1,7 @@
 clear; clc; close all;
 
 %% Simulation parameters
-dt = 0.02;
+dt = 1;
 T_total = 2500;
 t = 0:dt:T_total;
 

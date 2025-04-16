@@ -1,0 +1,248 @@
+function landing()
+    % Clean simulation of aircraft landing from 200m altitude
+    clear; clc; close all;
+    
+    %% Simulation Parameters
+    dt = 0.05;                  % Time step (s)
+    t_total = 140;               % Total simulation time (s)
+    t = 0:dt:t_total;           % Time vector
+    
+    %% Aircraft Parameters (updated for realistic speeds)
+    initial_altitude = 200;     % Starting altitude (m)
+    mph_to_ms = 0.44704;       % Conversion factor
+    approach_speed = 150 * mph_to_ms;  % ~150 mph (67 m/s) approach
+    touchdown_speed = 130 * mph_to_ms; % ~130 mph (58 m/s) touchdown
+    flare_altitude = 30;        % Altitude to begin flare (m)
+    touchdown_altitude = 0.1;   % Altitude considered as touchdown (m)
+    
+    %% Flight Control Parameters
+    % Updated pitch controller for higher speeds
+    Kp_pitch = 1.2;
+    Ki_pitch = 0.03;
+    Kd_pitch = 0.7;
+    
+    % Updated speed controller
+    Kp_speed = 0.15;
+    Ki_speed = 0.005;
+    Kd_speed = 0.08;
+    
+    %% Initialize State Variables
+    n = length(t);
+    initial_X = -4700;
+    X = initial_X * ones(1,n);             % Position (m)
+    Y = zeros(1,n);
+    Z = initial_altitude*ones(1,n);
+    pitch = zeros(1,n);         % Pitch angle (rad)
+    speed = approach_speed*ones(1,n);
+    
+    % Control variables
+    pitch_error_int = 0;
+    prev_pitch_error = 0;
+    speed_error_int = 0;
+    prev_speed_error = 0;
+    
+    %% Main Simulation Loop
+    touchdown_index = n; % Initialize to end of simulation in case no touchdown
+    on_runway = false;
+    
+    for i = 2:n
+        current_altitude = Z(i-1);
+        current_speed = speed(i-1);
+        
+        % Calculate desired parameters based on flight phase
+        if current_altitude > flare_altitude
+            % Approach phase
+            desired_pitch = deg2rad(-3.0);  % Slightly more nose down for higher speed
+            desired_speed = approach_speed - (approach_speed - touchdown_speed) * ...
+                          (1 - min(1, (current_altitude-flare_altitude)/(initial_altitude-flare_altitude)));
+            
+            % Limit descent rate to 5-8 m/s during approach (more realistic for jets)
+            max_sink_rate = 8;
+            min_sink_rate = 5;
+            desired_sink_rate = -min_sink_rate - (max_sink_rate-min_sink_rate)*...
+                               (current_altitude-flare_altitude)/(initial_altitude-flare_altitude);
+        else
+            % Flare phase
+            flare_progress = min(1, current_altitude/flare_altitude);
+            
+            % Gradually increase pitch to flare attitude
+            desired_pitch = deg2rad(-3.0 + 8*(1-flare_progress));  % More aggressive flare
+            
+            % Continue reducing speed
+            desired_speed = touchdown_speed + (approach_speed - touchdown_speed) * flare_progress * 0.3;
+            
+            % Reduce sink rate during flare
+            desired_sink_rate = -max(0.2, 0.5 * flare_progress); 
+        end
+        
+        %% Speed Control (throttle)
+        speed_error = desired_speed - current_speed;
+        speed_error_int = speed_error_int + speed_error*dt;
+        speed_error_deriv = (speed_error - prev_speed_error)/dt;
+        
+        speed_command = Kp_speed*speed_error + Ki_speed*speed_error_int + Kd_speed*speed_error_deriv;
+        
+        % Limit speed change rate to 0.8 m/s² for realism (jets can adjust faster)
+        max_accel = 0.8;
+        speed_change = sign(speed_command)*min(abs(speed_command), max_accel*dt);
+        speed(i) = current_speed + speed_change;
+        
+        %% Pitch Control (elevator)
+        % Convert desired sink rate to pitch angle if needed
+        if current_altitude < flare_altitude
+            required_pitch = asin(desired_sink_rate / current_speed);
+            desired_pitch = max(desired_pitch, required_pitch);  % Keep more nose-up if needed
+        end
+        
+        pitch_error = desired_pitch - pitch(i-1);
+        pitch_error_int = pitch_error_int + pitch_error*dt;
+        pitch_error_deriv = (pitch_error - prev_pitch_error)/dt;
+        
+        pitch_command = Kp_pitch*pitch_error + Ki_pitch*pitch_error_int + Kd_pitch*pitch_error_deriv;
+        
+        % Limit pitch rate to 4 deg/s for realism (jets can pitch faster)
+        max_pitch_rate = deg2rad(4);
+        pitch_change = sign(pitch_command)*min(abs(pitch_command), max_pitch_rate*dt);
+        pitch(i) = pitch(i-1) + pitch_change;
+        
+        %% Update Position
+        X(i) = X(i-1) + speed(i)*cos(pitch(i))*dt;
+        Z(i) = Z(i-1) + speed(i)*sin(pitch(i))*dt;
+        
+        %% Check for Touchdown
+        if Z(i-1) <= touchdown_altitude
+            Z(i) = 0;
+            pitch(i) = max(0, pitch(i-1) * 0.9);  % Smooth pitch down after touchdown
+
+            % Apply braking (deceleration)
+            braking_decel = 2.5; % m/s², moderate deceleration for jet
+            new_speed = max(0, current_speed - braking_decel * dt);
+
+            speed(i) = new_speed;
+
+            % Stop updating X once speed is zero
+            if new_speed == 0
+                X(i) = X(i-1);  % Stop movement
+                touchdown_index = i;
+                break;
+            else
+                X(i) = X(i-1) + new_speed * cos(pitch(i)) * dt;
+            end
+        else
+            X(i) = X(i-1) + speed(i)*cos(pitch(i))*dt;
+            Z(i) = Z(i-1) + speed(i)*sin(pitch(i))*dt;
+        end
+        
+        prev_pitch_error = pitch_error;
+        prev_speed_error = speed_error;
+    end
+    
+    %% Visualization
+    % Inline plot creation (replaces create_plots function)
+    figure('Position', [100 100 1200 800], 'Name', 'Landing Performance');
+    
+    % 3D Flight Path
+    subplot(2,2,[1 3]);
+    hold on; grid on; axis equal;
+    plot3(X(1:touchdown_index), Y(1:touchdown_index), Z(1:touchdown_index), 'b-', 'LineWidth', 2);
+    
+    % Mark key points
+    scatter3(0, 0, initial_altitude, 100, 'go', 'filled');
+    scatter3(X(touchdown_index), Y(touchdown_index), Z(touchdown_index), 100, 'rx', 'LineWidth', 2);
+    
+    % Mark flare initiation if it occurred
+    flare_index = find(Z <= flare_altitude, 1);
+    if ~isempty(flare_index)
+        scatter3(X(flare_index), Y(flare_index), Z(flare_index), 100, 'ms', 'filled');
+    end
+    
+    % Runway
+    runway_start = 0;
+    runway_length = 3000;
+    patch([runway_start runway_start+runway_length runway_start+runway_length runway_start], ...
+      [-50 -50 50 50], [0 0 0 0], 'g', 'FaceAlpha', 0.2);
+    
+    xlabel('Distance (m)'); ylabel('Lateral (m)'); zlabel('Altitude (m)');
+    title('3D Landing Trajectory');
+    view(45, 30);
+    
+    legend_items = {'Flight Path', 'Start', 'Touchdown'};
+    if ~isempty(flare_index)
+        legend_items = [legend_items, {'Flare Initiation'}];
+    end
+    legend(legend_items, 'Location', 'northeast');
+    
+    % Altitude Profile
+    subplot(2,2,2);
+    plot(t(1:touchdown_index), Z(1:touchdown_index), 'LineWidth', 2);
+    hold on;
+    yline(flare_altitude, '--m', 'Flare Altitude');
+    xlabel('Time (s)'); ylabel('Altitude (m)');
+    title('Altitude vs Time');
+    grid on;
+    
+    % Speed Profile
+    subplot(2,2,4);
+    plot(t(1:touchdown_index), speed(1:touchdown_index), 'LineWidth', 2);
+    hold on;
+    yline(speed(touchdown_index), '--r', 'Touchdown Speed');
+    xlabel('Time (s)'); ylabel('Speed (m/s)');
+    title('Speed vs Time');
+    grid on;
+    
+    % Simple animation (replaces animate_landing function)
+    % Simple animation (full-scene animation)
+fig2 = figure('Position', [200 200 800 600], 'Name', 'Landing Animation');
+ax = axes(fig2);
+hold(ax, 'on'); grid(ax, 'on');
+axis(ax, 'equal');
+ylim(ax, [-100 100]);
+zlim(ax, [0 initial_altitude+50]);
+view(ax, 45, 30);
+
+% Plot entire flight path once (for reference, lightly)
+plot3(ax, X(1:touchdown_index), Y(1:touchdown_index), Z(1:touchdown_index), 'b:', 'LineWidth', 0.8);
+
+% Create aircraft representation
+aircraft = plot3(ax, X(1), Y(1), Z(1), 'bo', 'MarkerSize', 10, 'MarkerFaceColor', 'b');
+pitch_line = plot3(ax, [0 0], [0 0], [0 0], 'r-', 'LineWidth', 1.5);
+
+% Runway patch (moves with aircraft)
+runway_patch = patch(ax, ...
+    [0 runway_length runway_length 0], ...
+    [-50 -50 50 50], ...
+    [0 0 0 0], 'g', 'FaceAlpha', 0.2);
+
+title(ax, 'Landing Animation');
+xlabel(ax, 'Distance (m)'); ylabel(ax, 'Lateral (m)'); zlabel(ax, 'Altitude (m)');
+
+% Animation loop
+frame_indices = [1:5:touchdown_index, touchdown_index];
+for k = frame_indices
+    % Update aircraft
+    set(aircraft, 'XData', X(k), 'YData', Y(k), 'ZData', Z(k));
+
+    % Update pitch line
+    dx = 20 * cos(pitch(k));
+    dz = 20 * sin(pitch(k));
+    set(pitch_line, ...
+        'XData', [X(k) X(k)+dx], ...
+        'YData', [Y(k) Y(k)], ...
+        'ZData', [Z(k) Z(k)+dz]);
+
+    % Move runway patch so it's always correctly placed
+    set(runway_patch, 'XData', [0 runway_length runway_length 0] + X(k), ...
+                      'YData', [-50 -50 50 50], ...
+                      'ZData', [0 0 0 0]);
+
+    % Shift X-axis view to follow aircraft
+    xlim(ax, [X(k)-100 X(k)+300]);
+
+    % Update title
+    title(ax, sprintf('Landing Animation\nTime: %.1fs | Alt: %.1fm | Speed: %.1fm/s (%.1f mph) | Pitch: %.1f°', ...
+                     t(k), Z(k), speed(k), speed(k)/mph_to_ms, rad2deg(pitch(k))));
+    
+    drawnow;
+    pause(0.02);
+    
+end
