@@ -1,7 +1,7 @@
 clear; clc; close all;
 
 %% Simulation parameters
-dt = 0.05;
+dt = 0.1;
 T_total = 2500;
 t = 0:dt:T_total;
 
@@ -39,7 +39,7 @@ des_s = 0;
 psi_desired_initial = deg2rad(0);
 psi_desired_final = deg2rad(28);
 ramp_duration = 50;
-Kp = 15; Ki = 0.35; Kd = 20;
+Kp = 15; Ki = 0.35; Kd = 2.0;
 int_err = 0; err_prev = 0;
 max_bank_angle = deg2rad(25);
 turn_rate_constant = 9.81 / V_takeoff;
@@ -48,7 +48,7 @@ psi_descent_initial = deg2rad(28);
 psi_descent_final = deg2rad(0);
 
 %% PITCH PID (Used throughout)
-Kp_pitch = 5; Ki_pitch = 0.1; Kd_pitch = 0.5;
+Kp_pitch = 5; Ki_pitch = 0.1; Kd_pitch = 0.05;
 int_err_pitch = 0; err_prev_pitch = 0;
 pitch_tau = 5;
 
@@ -93,6 +93,40 @@ Z = zeros(size(t));
 pitch_angle = zeros(size(t));
 heading_angle = zeros(size(t));
 bank_angle = zeros(size(t));
+
+%% Wind disturbance
+% Define gust parameters
+gust_amplitude_heading = deg2rad(0.3);  % max ±0.3 deg gust effect on heading
+gust_amplitude_pitch = deg2rad(0.3);    % max ±0.3 deg effect on pitch
+gust_frequency = 0.01;                % low frequency for structured gusts
+% gust_duration = [200, 800];           % gusts active between these times
+
+noise_std_heading = deg2rad(0.05);      % Std dev for heading gust noise
+noise_std_pitch   = deg2rad(0.03);      % Std dev for pitch gust noise
+
+% Define gust profiles
+gust_heading = zeros(size(t));
+gust_pitch = zeros(size(t));
+for i = 1:length(t)
+    base_heading = gust_amplitude_heading * sin(2 * pi * gust_frequency * t(i));
+    base_pitch = gust_amplitude_pitch * sin(2 * pi * gust_frequency * t(i));
+    
+    gust_heading(i) = base_heading + noise_std_heading * randn;
+    gust_pitch(i)   = base_pitch   + noise_std_pitch   * randn;
+end
+
+% Define LQR-phase gust (affecting yaw rate)
+gust_amplitude_r = deg2rad(1);  % Up to 1.5 deg/s yaw gust
+gust_frequency_r = 0.01;          % Low freq
+noise_std_r = deg2rad(0.3);       % Noise on top
+
+gust_r = zeros(size(t));
+for i = 1:length(t)
+    gust_r(i) = gust_amplitude_r * sin(2 * pi * gust_frequency_r * t(i)) + noise_std_r * randn;
+%                 noise_std_r * randn;
+end
+
+
 
 %% Logging arrays
 heading_error_log = zeros(size(t));
@@ -139,15 +173,19 @@ for i = 2:length(t)
         desired_pitch = asin(climb_rate / V_takeoff);
         pitch_error = desired_pitch - pitch_angle(i-1);
         int_err_pitch = int_err_pitch + pitch_error * dt;
-        derr_pitch = (pitch_error - err_prev_pitch) / dt;
+        
+        % Low-pass filter for derivative (exponential moving average)
+        alpha = 0.8;  % between 0 and 1 — higher = smoother
+        derr = (pitch_error - err_prev_pitch) / dt;
+        filtered_derr_pitch = alpha * derr + (1 - alpha) * D_pitch_log(i-1);  % smooth
         err_prev_pitch = pitch_error;
         
         P_pitch = Kp_pitch * pitch_error;
         I_pitch = Ki_pitch * int_err_pitch;
-        D_pitch = Kd_pitch * derr_pitch;
+        D_pitch = Kd_pitch * filtered_derr_pitch;
         
         pitch_command = P_pitch + I_pitch + D_pitch;
-        pitch_angle(i) = pitch_angle(i-1) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
+        pitch_angle(i) = pitch_angle(i-1) + gust_pitch(i) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
         
 %         pitch_angle(i) = pitch_angle(i-1) + (P_pitch + I_pitch + D_pitch) * dt;
         Z(i) = Z(i-1) + sin(pitch_angle(i)) * V_ascend * dt;
@@ -162,12 +200,17 @@ for i = 2:length(t)
         % Heading error for PID controller
         heading_error = psi_desired - heading_angle(i-1);
         int_err = int_err + heading_error * dt;
+        
+        % Low-pass filter for derivative (exponential moving average)
+        alpha = 0.8;  % between 0 and 1 — higher = smoother
         derr = (heading_error - err_prev) / dt;
+        filtered_derr_heading = alpha * derr + (1 - alpha) * D_term_log(i-1);  % smooth
+%         derr = (heading_error - err_prev) / dt;
         err_prev = heading_error;
         
         P_term = Kp * heading_error;
         I_term = Ki * int_err;
-        D_term = Kd * derr;
+        D_term = Kd * filtered_derr_heading;
 
         bank_command = Kp * heading_error + Ki * int_err + Kd * derr;
         bank_command = min(max(bank_command, -max_bank_angle), max_bank_angle);
@@ -177,7 +220,7 @@ for i = 2:length(t)
 
         % Update heading based on bank angle
         turn_rate = turn_rate_constant * tan(bank_angle(i));
-        heading_angle(i) = heading_angle(i-1) + turn_rate * dt;
+        heading_angle(i) = heading_angle(i-1) + gust_heading(i) + turn_rate * dt;
 
         % Log data
         heading_error_log(i) = heading_error;
@@ -211,17 +254,19 @@ for i = 2:length(t)
         pitch_error = desired_pitch - pitch_angle(i-1);
 
         int_err_pitch = int_err_pitch + pitch_error * dt;
-        derr_pitch = (pitch_error - err_prev_pitch) / dt;
+        alpha = 0.8;  % between 0 and 1 — higher = smoother
+        derr = (pitch_error - err_prev_pitch) / dt;
+        filtered_derr_pitch = alpha * derr + (1 - alpha) * D_pitch_log(i-1);  % smooth
         err_prev_pitch = pitch_error;
 
         P_pitch = Kp_pitch * pitch_error;
         I_pitch = Ki_pitch * int_err_pitch;
-        D_pitch = Kd_pitch * derr_pitch;
+        D_pitch = Kd_pitch * filtered_derr_pitch;
 
         pitch_command = P_pitch + I_pitch + D_pitch;
 
         % Limit pitch rate change for realism
-        pitch_angle(i) = pitch_angle(i-1) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
+        pitch_angle(i) = pitch_angle(i-1) + gust_pitch(i) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
 
         % Update altitude based on pitch
         Z(i) = Z(i-1) + V_cruise * dt * sin(pitch_angle(i));
@@ -235,12 +280,14 @@ for i = 2:length(t)
         % Heading error for PID controller
         heading_error = psi_desired - heading_angle(i-1);
         int_err = int_err + heading_error * dt;
+        alpha = 0.8;  % between 0 and 1 — higher = smoother
         derr = (heading_error - err_prev) / dt;
+        filtered_derr_heading = alpha * derr + (1 - alpha) * D_term_log(i-1);
         err_prev = heading_error;
         
         P_term = Kp * heading_error;
         I_term = Ki * int_err;
-        D_term = Kd * derr;
+        D_term = Kd * filtered_derr_heading;
 
         bank_command = Kp * heading_error + Ki * int_err + Kd * derr;
         bank_command = min(max(bank_command, -max_bank_angle), max_bank_angle);
@@ -250,7 +297,7 @@ for i = 2:length(t)
 
         % Update heading based on bank angle
         turn_rate = turn_rate_constant * tan(bank_angle(i));
-        heading_angle(i) = heading_angle(i-1) + turn_rate * dt;
+        heading_angle(i) = heading_angle(i-1) + gust_heading(i) + turn_rate * dt;
 
         % Log data
         heading_error_log(i) = heading_error;
@@ -282,14 +329,19 @@ for i = 2:length(t)
         
         % Update pitch
         pitch_command = P_pitch + I_pitch + D_pitch;
-        pitch_angle(i) = pitch_angle(i-1) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
+        pitch_angle(i) = pitch_angle(i-1) + gust_pitch(i) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
         
         %%% LQR Heading Control %%%
         % Calculate control input
         u_rudder = -Klqr * xp;
         
         % Update augmented state
-        xp_dot = Ap * xp + Bp(:,1) * u_rudder;
+        % Add yaw gust as external disturbance to yaw rate state
+        %xp(3) = xp(3) + gust_r(i);  % xp(3) = yaw rate r
+
+        gust_moment = gust_r(i);  
+        
+        xp_dot = Ap * xp + Bp(:,1) * u_rudder+ Bp(:,2) * gust_moment;
         xp = xp + xp_dot * dt;
         
         % Extract states
@@ -313,12 +365,16 @@ for i = 2:length(t)
             stage_cruise = 0;
         end
         
+%         fprintf('Time = %.2f s\n', t(i));
+        
         % Log pitch data
         pitch_error_log(i) = pitch_error;
         P_pitch_log(i) = P_pitch;
         I_pitch_log(i) = I_pitch;
         D_pitch_log(i) = D_pitch;
     elseif descent_stage
+        
+%         print("descent")
         if V_cruise > V_descend_final
             V_cruise = V_cruise - acceleration * dt;
         end
@@ -342,7 +398,7 @@ for i = 2:length(t)
         pitch_command = P_pitch + I_pitch + D_pitch;
 
         % Limit pitch rate change for realism
-        pitch_angle(i) = pitch_angle(i-1) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
+        pitch_angle(i) = pitch_angle(i-1) + gust_pitch(i) + (pitch_command - pitch_angle(i-1)) * (dt / pitch_tau);
 
         % Update altitude based on pitch
         Z(i) = Z(i-1) + V_cruise * dt * sin(pitch_angle(i));
@@ -365,7 +421,7 @@ for i = 2:length(t)
 
         % Update heading based on bank angle
         turn_rate = turn_rate_constant * tan(bank_angle(i));
-        heading_angle(i) = heading_angle(i-1) + turn_rate * dt;
+        heading_angle(i) = heading_angle(i-1) + gust_heading(i) + turn_rate * dt;
 
         % Log data
         heading_error_log(i) = heading_error;
@@ -421,10 +477,19 @@ subplot(3, 1, 3);
 plot(t, P_term_log, 'r', t, I_term_log, 'g', t, D_term_log, 'b');
 xlabel('Time (s)');
 ylabel('PID Terms');
-ylim([-15 30]);
+% ylim([-15 30]);
 title('PID Contributions');
 legend('P', 'I', 'D');
 grid on;
+
+
+figure;
+subplot(2,1,1);
+plot(t, rad2deg(gust_heading)); title('Heading Gusts'); ylabel('Degrees'); grid on;
+
+subplot(2,1,2);
+plot(t, rad2deg(gust_pitch)); title('Pitch Gusts'); ylabel('Degrees'); xlabel('Time (s)'); grid on;
+
 
 % Visualization setup
 figure; hold on; grid on; axis equal;
@@ -478,7 +543,7 @@ view(3); % 3D view
 
 
 % Animation loop
-for i = 1:100:length(t)
+for i = 1:20:length(t)
      T_translate = makehgtform('translate', [X(i), Y(i), Z(i) + ground_clearance]);
      T_yaw = makehgtform('zrotate', heading_angle(i));
      T_pitch = makehgtform('yrotate', -pitch_angle(i));
