@@ -478,7 +478,7 @@ view(3); % 3D view
 
 
 % Animation loop
-for i = 1:length(t)
+for i = 1:100:length(t)
      T_translate = makehgtform('translate', [X(i), Y(i), Z(i) + ground_clearance]);
      T_yaw = makehgtform('zrotate', heading_angle(i));
      T_pitch = makehgtform('yrotate', -pitch_angle(i));
