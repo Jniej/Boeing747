@@ -491,12 +491,8 @@ for i = 2:length(t)
 
             if V_land <= 0.1
                 % fully stopped → end simulation
-                touchdown_index = i;   % record where we stopped
                 break;
             end
-            
-%             fprintf('t = %.1f s,   V_land = %.2f m/s\n', t(i), V_land);
-            
 
         else
             % --- Approach & Flare Phases ---
@@ -555,34 +551,13 @@ for i = 2:length(t)
             end
             
             % to print once per time‑step in your loop:
-%             fprintf('t = %.1f s,   V_land = %.2f m/s\n', t(i), V_land);
+            fprintf('t = %.1f s,   V_land = %.2f m/s\n', t(i), V_land);
 
 
         end
     end
 end
 
-t            = t(1:touchdown_index);
-X            = X(1:touchdown_index);
-Y            = Y(1:touchdown_index);
-Z            = Z(1:touchdown_index);
-pitch_angle  = pitch_angle(1:touchdown_index);
-heading_angle= heading_angle(1:touchdown_index);
-bank_angle   = bank_angle(1:touchdown_index);
-
-pitch_error_log   = pitch_error_log(1:touchdown_index);
-P_pitch_log       = P_pitch_log(1:touchdown_index);
-I_pitch_log       = I_pitch_log(1:touchdown_index);
-D_pitch_log       = D_pitch_log(1:touchdown_index);
-
-heading_error_log = heading_error_log(1:touchdown_index);
-P_term_log        = P_term_log(1:touchdown_index);
-I_term_log        = I_term_log(1:touchdown_index);
-D_term_log        = D_term_log(1:touchdown_index);
-
-gust_heading = gust_heading(1:touchdown_index);
-gust_pitch   = gust_pitch(1:touchdown_index);
-gust_r       = gust_r(1:touchdown_index);
 
 %% Plotting and visualization (identical to original)
 % ... (keep all plotting code unchanged) ...

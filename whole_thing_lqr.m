@@ -25,7 +25,7 @@ final_velocity = 274.4;
 V_cruise = V_ascend;
 cruise_accel = 5;
 target_altitude = 10000;
-descent_altitude = 1000;
+descent_altitude = 200;
 V_descend_final = 81.22;
 
 %% Graphing parameters
@@ -377,6 +377,8 @@ for i = 2:length(t)
         P_pitch_log(i) = P_pitch;
         I_pitch_log(i) = I_pitch;
         D_pitch_log(i) = D_pitch;
+        
+        fprintf('Time = %.1f s, Altitude = %.2f m\n', t(i), Z(i));
 
     end
 end
