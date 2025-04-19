@@ -559,6 +559,8 @@ for i = 2:length(t)
 
 
         end
+        
+        fprintf('t = %.1f s,   Z(i) = %.2f m\n', t(i), Z(i));
     end
 end
 

@@ -136,6 +136,8 @@ function landing()
 
         prev_pitch_error = pitch_error;
         prev_speed_error = speed_error;
+        
+        fprintf('t = %.1f s,   Z(i) = %.2f m\n', t(i), Z(i));
     end
     
     %% Visualization
